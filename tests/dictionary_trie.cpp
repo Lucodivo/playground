@@ -4,6 +4,7 @@
 
 struct linked_trie_dictionary_node {
   char character;
+  bool endOfWord;
   linked_trie_dictionary_node* firstChild;
   linked_trie_dictionary_node* nextSibling;
 };
@@ -75,16 +76,7 @@ bool contains(const linked_trie_dictionary& dict, const std::string& word) {
     }
   }
 
-  // at this point all characters have been found and just have to check for a termination character
-  linked_trie_dictionary_node* child = parent->firstChild;
-  while(child != nullptr) {
-    if(child->character == '.') {
-      return true;
-    }
-    child = child->nextSibling;
-  }
-
-  return false;
+  return parent->endOfWord;
 }
 
 void buildDictionary(const std::vector<char>& fileCharacters, linked_trie_dictionary& outDict) {
@@ -116,60 +108,39 @@ void buildDictionary(const std::vector<char>& fileCharacters, linked_trie_dictio
 
     linked_trie_dictionary_node* parent = &outDict.root;
     while(fileCharacterIndex < fileCharactersCount) {
-      fileCharacter = fileCharacters[fileCharacterIndex];
+      fileCharacter = fileCharacters[fileCharacterIndex++];
       if((fileCharacter < 'a' || fileCharacter > 'z') && fileCharacter != '-') {
         break;
       }
 
-      if(parent->firstChild == nullptr) {
-        parent->firstChild = nextFree(outDict.allocator);
-        parent->firstChild->character = fileCharacter;
-        parent->firstChild->nextSibling = nullptr;
-        parent->firstChild->firstChild = nullptr;
-        parent = parent->firstChild;
-      } else {
-        linked_trie_dictionary_node* child = parent->firstChild;
-        while(child != nullptr) {
-          if(child->character == fileCharacter) {
-            parent = child;
-            break;
-          }
-          child = child->nextSibling;
-        }
-        if(parent != child) { // if character wasn't found
-          child = nextFree(outDict.allocator);
-          child->character = fileCharacter;
-          child->nextSibling = parent->firstChild;
-          parent->firstChild = child;
-          child->firstChild = nullptr;
+      linked_trie_dictionary_node* child = parent->firstChild;
+
+      // search for character amongst children
+      while(child != nullptr) {
+        if(child->character == fileCharacter) {
           parent = child;
+          break;
         }
+        child = child->nextSibling;
+      }
+
+      // if character not found, create new one
+      if(parent != child) {
+        child = nextFree(outDict.allocator);
+        child->character = fileCharacter;
+        child->nextSibling = parent->firstChild;
+        parent->firstChild = child;
+        child->firstChild = nullptr;
+        child->endOfWord = false;
+        parent = child;
       }
     }
 
-    // NOTE: word is completed by placing '.' as a child
-    // NOTE: Should I assume that this is an error?
-    bool isWordAlready = false;
-    linked_trie_dictionary_node* child = parent->firstChild;
-    while(child != nullptr) {
-      if(child->character == '.') {
-        isWordAlready = true;
-        break;
-      }
-      child = child->nextSibling;
-    }
-
-    if(!isWordAlready) {
-      linked_trie_dictionary_node* terminationNode = nextFree(outDict.allocator);
-      terminationNode->character = '.';
-      terminationNode->nextSibling = parent->firstChild;
-      parent->firstChild = terminationNode;
-      terminationNode->firstChild = nullptr;
-    }
+    parent->endOfWord = true;
   }
 }
 
-// ==== TRIE USING ARRAY OF 27 POINTERS
+// ==== TRIE USING ARRAY OF POINTERS
 const u32 supportedLetterCount = 27; // a-z, -
 
 struct trie_dictionary_node {
@@ -263,27 +234,17 @@ void buildDictionary(const std::vector<char>& fileCharacters, trie_dictionary& o
       continue;
     }
 
-    u32 wordHeadIndex = fileCharacterIndex;
-    u32 wordTailIndex = wordHeadIndex;
-    while(++fileCharacterIndex < fileCharactersCount) {
-      fileCharacter = fileCharacters[fileCharacterIndex];
-      if((fileCharacter < 'a' || fileCharacter > 'z') && fileCharacter != '-') {
-        break;
-      }
-      wordTailIndex = fileCharacterIndex;
-    }
-
     trie_dictionary_node* parent = &outDict.root;
-    for(u32 i = wordHeadIndex; i <= wordTailIndex; i++) {
-      char character = fileCharacters[i];
+    while(fileCharacterIndex < fileCharactersCount) {
+      fileCharacter = fileCharacters[fileCharacterIndex++];
 
-      s32 letterIndex = -1;
-      if(character >= 'a' && character <= 'z') {
-        letterIndex = character - 'a';
-      } else if(character == '-') {
+      s32 letterIndex;
+      if(fileCharacter >= 'a' && fileCharacter <= 'z') {
+        letterIndex = fileCharacter - 'a';
+      } else if(fileCharacter == '-') {
         letterIndex = 26;
       } else {
-        printf("Error: Character outside the set {a-z,-}");
+        break;
       }
 
       trie_dictionary_node* child = parent->children[letterIndex];
@@ -293,6 +254,7 @@ void buildDictionary(const std::vector<char>& fileCharacters, trie_dictionary& o
       }
       parent = child;
     }
+
     parent->endOfWord = true;
   }
 }
@@ -337,16 +299,7 @@ bool contains(const linked_trie_dictionary_no_allocator& dict, const std::string
     }
   }
 
-  // at this point all characters have been found and just have to check for a termination character
-  linked_trie_dictionary_node* child = parent->firstChild;
-  while(child != nullptr) {
-    if(child->character == '.') {
-      return true;
-    }
-    child = child->nextSibling;
-  }
-
-  return false;
+  return parent->endOfWord;
 }
 
 void buildDictionary(const std::vector<char>& fileCharacters, linked_trie_dictionary_no_allocator& outDict) {
@@ -365,65 +318,37 @@ void buildDictionary(const std::vector<char>& fileCharacters, linked_trie_dictio
       continue;
     }
 
-    u32 wordHeadIndex = fileCharacterIndex++;
-    u32 wordTailIndex = wordHeadIndex;
+    linked_trie_dictionary_node* parent = &outDict.root;
     while(fileCharacterIndex < fileCharactersCount) {
-      fileCharacter = fileCharacters[fileCharacterIndex];
+      fileCharacter = fileCharacters[fileCharacterIndex++];
       if((fileCharacter < 'a' || fileCharacter > 'z') && fileCharacter != '-') {
         break;
       }
-      wordTailIndex = fileCharacterIndex++;
-    }
 
-    linked_trie_dictionary_node* parent = &outDict.root;
-    for(u32 i = wordHeadIndex; i <= wordTailIndex; i++) {
-      char character = fileCharacters[i];
+      linked_trie_dictionary_node* child = parent->firstChild;
 
-      if(parent->firstChild == nullptr) {
-        parent->firstChild = new linked_trie_dictionary_node;
-        outDict.nodeCount++;
-        parent->firstChild->character = character;
-        parent->firstChild->nextSibling = nullptr;
-        parent->firstChild->firstChild = nullptr;
-        parent = parent->firstChild;
-      } else {
-        linked_trie_dictionary_node* child = parent->firstChild;
-        while(child != nullptr) {
-          if(child->character == character) {
-            parent = child;
-            break;
-          }
-          child = child->nextSibling;
-        }
-        if(parent != child) { // if character wasn't found
-          child = new linked_trie_dictionary_node;
-          outDict.nodeCount++;
-          child->character = character;
-          child->nextSibling = parent->firstChild;
-          parent->firstChild = child;
-          child->firstChild = nullptr;
+      // search for character amongst children
+      while(child != nullptr) {
+        if(child->character == fileCharacter) {
           parent = child;
+          break;
         }
+        child = child->nextSibling;
+      }
+
+      // if character not found, create new one
+      if(parent != child) {
+        child = new linked_trie_dictionary_node;
+        outDict.nodeCount++;
+        child->character = fileCharacter;
+        child->nextSibling = parent->firstChild;
+        parent->firstChild = child;
+        child->firstChild = nullptr;
+        child->endOfWord = false;
+        parent = child;
       }
     }
 
-    // NOTE: word is completed by placing '.' as a child
-    bool isWordAlready = false;
-    linked_trie_dictionary_node* child = parent->firstChild;
-    while(child != nullptr) {
-      if(child->character == '.') {
-        isWordAlready = true;
-        break;
-      }
-      child = child->nextSibling;
-    }
-    if(!isWordAlready) {
-      linked_trie_dictionary_node* terminationNode = new linked_trie_dictionary_node;
-      outDict.nodeCount++;
-      terminationNode->character = '.';
-      terminationNode->nextSibling = parent->firstChild;
-      parent->firstChild = terminationNode;
-      terminationNode->firstChild = nullptr;
-    }
+    parent->endOfWord = true;
   }
 }

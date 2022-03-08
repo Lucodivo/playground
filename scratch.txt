@@ -1,0 +1,27 @@
+=== Trie Comparison Using '.' As Word Termination ===
+Time to load (linked trie): 66.27300 ms
+Time for 9 contains (linked trie): 0.03140 ms
+Total Memory (linked trie): 32.47108 MBs
+Malloc Count (linked trie): 18
+Time to load (no allocator): 252.30080 ms
+Time for 9 contains (no allocator): 0.03550 ms
+Total Memory (no allocator): 0.00000 MBs
+Malloc Count (no allocator): 0
+Time to load (trie): 103.59430 ms
+Time for 9 contains (trie): 0.01990 ms
+Total Memory (trie): 226.16806 MBs
+Malloc Count (trie): 1
+
+=== Trie Compaison Using Bool As Word Termination ===
+Time to load (linked trie): 55.96430 ms
+Time for 9 contains (linked trie): 0.02930 ms
+Total Memory (linked trie): 24.23229 MBs
+Malloc Count (linked trie): 1
+Time to load (no allocator): 192.50200 ms
+Time for 9 contains (no allocator): 0.03480 ms
+Total Memory (no allocator): 23.52480 MBs
+Malloc Count (no allocator): 1027814
+Time to load (trie): 105.45410 ms
+Time for 9 contains (trie): 0.02180 ms
+Total Memory (trie): 226.16806 MBs
+Malloc Count (trie): 1
