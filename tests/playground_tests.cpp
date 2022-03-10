@@ -2,6 +2,7 @@
 
 #include "linked_list.cpp"
 #include "dictionary_trie.cpp"
+#include "hash_set.cpp"
 
 class PlaygroundTest : public testing::Test {
 protected:
@@ -210,4 +211,107 @@ TEST(TrieDictionary, buildDictAndContains_Trie) {
   printf("Malloc Count (trie): %llu\n", trieDictionary.allocator.mallocPtrs.size());
 
   freeDictionary(trieDictionary);
+}
+
+struct TestData {
+  u64 uniqueIndex;
+  f32 aFloat;
+  f64 aDouble;
+  bool aBool;
+  s16 aSignedInt16;
+};
+
+HASH_SET_HASH(hash_set_test_data_hash) {
+  TestData* testData = (TestData*)voidPtr;
+  return testData->uniqueIndex;
+}
+
+HASH_SET_EQUALS(hash_set_test_data_equals) {
+  TestData* testData1 = (TestData*)voidPtr1;
+  TestData* testData2 = (TestData*)voidPtr2;
+  return testData1->uniqueIndex == testData2->uniqueIndex &&
+          testData1->aFloat == testData2->aFloat &&
+          testData1->aDouble == testData2->aDouble &&
+          testData1->aBool == testData2->aBool &&
+          testData1->aSignedInt16 == testData2->aSignedInt16;
+}
+
+TEST(HashSet, inserts_contains_collisions) {
+  const u64 firstLevelCapacity = 32;
+
+  const TestData defaultInsertData{
+    0,
+    1.0f,
+    2.0,
+    true,
+    4
+  };
+
+  const u64 firstWaveInsertCount = firstLevelCapacity;
+  TestData firstWaveTestData[firstWaveInsertCount];
+  for(u32 i = 0; i < firstWaveInsertCount; i++) {
+    firstWaveTestData[i] = defaultInsertData;
+    firstWaveTestData[i].uniqueIndex = i;
+  }
+
+  const u64 collisionDataCount = 10;
+  const u64 halfCollisionCount = collisionDataCount / 2;
+  TestData collisionData[collisionDataCount];
+  // collisions
+  for(u64 i = 0; i < halfCollisionCount; i++) {
+    collisionData[i] = defaultInsertData;
+    collisionData[i].aSignedInt16 = defaultInsertData.aSignedInt16 + i + 1; // something to be unique
+    collisionData[i].uniqueIndex = (firstLevelCapacity + i);
+  }
+  // double collisions to same indices as above
+  for(u64 i = halfCollisionCount; i < collisionDataCount; i++) {
+    collisionData[i] = defaultInsertData;
+    collisionData[i].aSignedInt16 = defaultInsertData.aSignedInt16 + i + 1; // something to be unique
+    collisionData[i].uniqueIndex = (firstLevelCapacity + i - halfCollisionCount);
+  }
+
+  const TestData notInsertedData{
+    0,
+    400.0f,
+    300.0,
+    false,
+    100
+  };
+
+  const u64 notInsertedDataCount = firstWaveInsertCount;
+  TestData notInsertedTestData[notInsertedDataCount];
+  for(u32 i = 0; i < notInsertedDataCount; i++) {
+    notInsertedTestData[i] = notInsertedData;
+    notInsertedTestData[i].uniqueIndex = i;
+  }
+
+  HashSet testDataHashSet = HashSet(sizeof(TestData), hash_set_test_data_hash, hash_set_test_data_equals, firstLevelCapacity);
+
+  // fill up hash set
+  for(TestData& testData : firstWaveTestData) {
+    testDataHashSet.insert(&testData);
+  }
+
+  // cause some collisions
+  for(TestData& testData : collisionData) {
+    testDataHashSet.insert(&testData);
+  }
+
+  // assert first round of data was inserted
+  for(TestData& testData : firstWaveTestData) {
+    ASSERT_TRUE(testDataHashSet.contains(&testData));
+  }
+
+  // assert collision round of data was inserted
+  for(TestData& testData : collisionData) {
+    ASSERT_TRUE(testDataHashSet.contains(&testData));
+  }
+
+  // assert non-inserted data is properly reported as not contained
+  for(TestData& testData : notInsertedTestData) {
+    ASSERT_FALSE(testDataHashSet.contains(&testData));
+  }
+
+  ASSERT_EQ(collisionDataCount, testDataHashSet.collisionsCount);
+  ASSERT_EQ(collisionDataCount + firstLevelCapacity, testDataHashSet.elementsCount);
 }
