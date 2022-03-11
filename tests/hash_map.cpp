@@ -1,9 +1,10 @@
 //
-// Created by Connor on 3/8/2022.
-// Generic hash set by just throwing around void pointers
+// Created by Connor on 3/9/2022.
+// Generic hash map by just throwing pointers around
+// HashMap holds shallow copies (literally just memcpy) of data inserted
 //
 
-struct HashSet {
+struct HashMap {
   u64 firstLevelCapacity;
   u64 firstLevelMemSize;
 
@@ -17,6 +18,7 @@ struct HashSet {
   u64 collisionsCount; // current collisions, not total collisions ever
 
   u64 keySize;
+  u64 datumSize;
 
   void* mallocPtr;
   void** firstLevelPtrs; // TODO: Consider changing the first level array from holding a pointer to holding an actual element
@@ -27,16 +29,17 @@ struct HashSet {
   hash_func_hash* hashFunc = HashFuncHashStub;
   hash_func_equals* equalsFunc = HashFuncEqualsStub;
 
-  HashSet(u64 keySize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 firstLevelCapacity_ = 1024) {
+  HashMap(u64 keySize_, u64 datumSize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 firstLevelCapacity_ = 1024) {
     keySize = keySize_;
+    datumSize = datumSize_;
     hashFunc = hashFunc_;
     equalsFunc = equalsFunc_;
 
     firstLevelCapacity = firstLevelCapacity_;
-    firstLevelMemSize = firstLevelCapacity * sizeof(void**);
+    firstLevelMemSize = firstLevelCapacity * sizeof(void*);
 
     elementsCapacity = firstLevelCapacity * 2;
-    elementSize = keySize + sizeof(void*); // key + next ptr
+    elementSize = keySize + datumSize + sizeof(void*); // key + data + next ptr
     elementsMemSize = elementsCapacity * elementSize;
 
     unusedElementsCount = elementsCapacity;
@@ -52,7 +55,7 @@ struct HashSet {
     recyclingElements = nullptr;
   }
 
-  ~HashSet() {
+  ~HashMap() {
     free(mallocPtr);
     mallocPtr = nullptr;
     firstLevelPtrs = nullptr;
@@ -61,6 +64,7 @@ struct HashSet {
     totalMallocSize = 0;
 
     keySize = 0;
+    datumSize = 0;
     hashFunc = HashFuncHashStub;
     equalsFunc = HashFuncEqualsStub;
 
@@ -77,11 +81,14 @@ struct HashSet {
     collisionsCount = 0;
   }
 
-  void parseVoidPtrData(void* elementPtr, void*& outKey, void**& outNext){
+  void parseVoidPtrData(void* elementPtr, void*& outKey, void*& outDatum, void**& outNext){
     outKey = elementPtr;
-    outNext = (void**)((char*)elementPtr + keySize);
+    outDatum = ((char*)elementPtr + keySize);
+    outNext = (void**)((char*)elementPtr + keySize + datumSize);
   }
 
+  // Guarantees that the element returned has a next ptr set to nullptr
+  // Key and datum in element have no such guarantees
   void* nextFreeElement() {
 
     void* nextFree;
@@ -89,10 +96,12 @@ struct HashSet {
     // check recycled elements first
     if(recyclingElements != nullptr) {
       void* key;
+      void* datum;
       void** nextElementPtr;
-      parseVoidPtrData(recyclingElements, key, nextElementPtr);
-      nextFree = key;
+      parseVoidPtrData(recyclingElements, key, datum, nextElementPtr);
+      nextFree = recyclingElements;
       recyclingElements = *nextElementPtr;
+      *nextElementPtr = nullptr; // clean the pointer before returning
       --recyclingElementsCount;
     } else if(unusedElementsCount > 0){
       nextFree = unusedElements;
@@ -100,7 +109,7 @@ struct HashSet {
       unusedElementsCount--;
     } else {
       // TODO: malloc more elements
-      printf("Error: HashSet at capacity.\n");
+      printf("Error: HashMap at capacity.\n");
       nextFree = nullptr;
     }
 
@@ -114,8 +123,9 @@ struct HashSet {
     void** foundElementPtr = firstLevelPtrs + arrayIndex;
     while(*foundElementPtr != nullptr) {
       void* foundKey;
+      void* foundDatum;
       void** foundNextPtr;
-      parseVoidPtrData(*foundElementPtr, foundKey, foundNextPtr);
+      parseVoidPtrData(*foundElementPtr, foundKey, foundDatum, foundNextPtr);
       if(equalsFunc(key, foundKey)) {
         return true;
       }
@@ -124,32 +134,59 @@ struct HashSet {
     return false;
   }
 
-  void insert(void* key) {
+  // TODO: Can just insert at the front of the list if we don't care about duplicate values
+  void insert(void* key, void* datum) {
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
 
     bool wasCollision = false;
-    void** foundKeyPtr = firstLevelPtrs + arrayIndex;
-    while(*foundKeyPtr != nullptr) {
+    void** foundElementPtr = firstLevelPtrs + arrayIndex;
+    while(*foundElementPtr != nullptr) {
       wasCollision = true;
       void* foundKey;
+      void* foundDatum;
       void** foundNextPtr;
-      parseVoidPtrData(*foundKeyPtr, foundKey, foundNextPtr);
+      parseVoidPtrData(*foundElementPtr, foundKey, foundDatum, foundNextPtr);
       if(equalsFunc(key, foundKey)) {
         printf("Attempting to insert same item twice.\n");
         return;
       }
-      foundKeyPtr = foundNextPtr;
+      foundElementPtr = foundNextPtr;
     }
 
-    void* newKey = nextFreeElement();
+    void* newElement = nextFreeElement();
+    void* newKey;
+    void* newDatum;
+    void** newNextElementPtr;
+    parseVoidPtrData(newElement, newKey, newDatum, newNextElementPtr);
     memcpy(newKey, key, keySize);
-    *foundKeyPtr = newKey;
+    memcpy(newDatum, datum, datumSize);
+    *newNextElementPtr = nullptr;
+    *foundElementPtr = newElement;
     ++elementsCount;
 
     if(wasCollision) {
       ++collisionsCount;
     }
+  }
+
+  void* retrieve(void* key) {
+    u64 hash = hashFunc(key);
+    u64 arrayIndex = hash % firstLevelCapacity;
+
+    void** foundElementPtr = firstLevelPtrs + arrayIndex;
+    while(*foundElementPtr != nullptr) {
+      void* foundKey;
+      void* foundDatum;
+      void** nextElementPtr;
+      parseVoidPtrData(*foundElementPtr, foundKey, foundDatum, nextElementPtr);
+      if(equalsFunc(key, foundKey)) {
+        return foundDatum;
+      }
+      foundElementPtr = nextElementPtr;
+    }
+
+    return nullptr;
   }
 
   bool remove(void* key) {
@@ -161,8 +198,9 @@ struct HashSet {
     void** foundElementPtr = firstLevelElementPtr;
     while(*foundElementPtr != nullptr) {
       void* foundKey;
+      void* foundDatum;
       void** foundNextPtr;
-      parseVoidPtrData(*foundElementPtr, foundKey, foundNextPtr);
+      parseVoidPtrData(*foundElementPtr, foundKey, foundDatum, foundNextPtr);
 
       if(equalsFunc(key, foundKey)) {
         bool removedCollision = false;

@@ -2,13 +2,9 @@
 
 #include "linked_list.cpp"
 #include "dictionary_trie.cpp"
+#include "hash_func_defines.h"
 #include "hash_set.cpp"
-
-class PlaygroundTest : public testing::Test {
-protected:
-  void SetUp() override { } // run immediately before a test starts
-  void TearDown() override { } // invoked immediately after a test finishes
-};
+#include "hash_map.cpp"
 
 // TEST_F is for using "fixtures"
 TEST(Playground, strncpys) {
@@ -213,7 +209,7 @@ TEST(TrieDictionary, buildDictAndContains_Trie) {
   freeDictionary(trieDictionary);
 }
 
-struct TestData {
+struct TestKey_hs {
   u64 uniqueIndex;
   f32 aFloat;
   f64 aDouble;
@@ -221,97 +217,237 @@ struct TestData {
   s16 aSignedInt16;
 };
 
-HASH_SET_HASH(hash_set_test_data_hash) {
-  TestData* testData = (TestData*)voidPtr;
-  return testData->uniqueIndex;
+HASH_FUNC_HASH(hash_set_test_data_hash) {
+  TestKey_hs* testKey = (TestKey_hs*)key;
+  return testKey->uniqueIndex;
 }
 
-HASH_SET_EQUALS(hash_set_test_data_equals) {
-  TestData* testData1 = (TestData*)voidPtr1;
-  TestData* testData2 = (TestData*)voidPtr2;
-  return testData1->uniqueIndex == testData2->uniqueIndex &&
-          testData1->aFloat == testData2->aFloat &&
-          testData1->aDouble == testData2->aDouble &&
-          testData1->aBool == testData2->aBool &&
-          testData1->aSignedInt16 == testData2->aSignedInt16;
+HASH_FUNC_EQUALS(hash_set_test_data_equals) {
+  TestKey_hs* testKey1 = (TestKey_hs*)key1;
+  TestKey_hs* testKey2 = (TestKey_hs*)key2;
+  return testKey1->uniqueIndex == testKey2->uniqueIndex &&
+         testKey1->aFloat == testKey2->aFloat &&
+         testKey1->aDouble == testKey2->aDouble &&
+         testKey1->aBool == testKey2->aBool &&
+         testKey1->aSignedInt16 == testKey2->aSignedInt16;
 }
 
-TEST(HashSet, inserts_contains_collisions) {
-  const u64 firstLevelCapacity = 32;
+class HashSetTest : public testing::Test {
+public:
+  const class_access u64 firstLevelCapacity = 16;
+  const class_access u64 firstWaveInsertCount = firstLevelCapacity;
+  const class_access u64 collisionKeysCount = 10;
+  const class_access u64 notInsertedDataCount = firstWaveInsertCount;
 
-  const TestData defaultInsertData{
-    0,
-    1.0f,
-    2.0,
-    true,
-    4
-  };
+  TestKey_hs firstWaveTestKeys[firstLevelCapacity];
+  TestKey_hs collisionKeys[collisionKeysCount];
+  TestKey_hs notInsertedTestKeys[notInsertedDataCount];
+  HashSet* testDataHashSet;
 
-  const u64 firstWaveInsertCount = firstLevelCapacity;
-  TestData firstWaveTestData[firstWaveInsertCount];
-  for(u32 i = 0; i < firstWaveInsertCount; i++) {
-    firstWaveTestData[i] = defaultInsertData;
-    firstWaveTestData[i].uniqueIndex = i;
+  // Init HashSet and fill it up with data
+  void SetUp() override { // runs immediately before a test starts
+    testDataHashSet = new HashSet(sizeof(TestKey_hs), hash_set_test_data_hash, hash_set_test_data_equals, firstLevelCapacity);
+
+    const TestKey_hs defaultInsertKey{
+            0,
+            1.0f,
+            2.0,
+            true,
+            4
+    };
+
+    const TestKey_hs default_NOT_InsertKey{
+            0,
+            400.0f,
+            300.0,
+            false,
+            100
+    };
+
+    for(u32 i = 0; i < firstWaveInsertCount; i++) {
+      firstWaveTestKeys[i] = defaultInsertKey;
+      firstWaveTestKeys[i].uniqueIndex = i;
+    }
+
+    const u64 halfCollisionCount = collisionKeysCount / 2;
+    // collisions
+    for(u64 i = 0; i < halfCollisionCount; i++) {
+      collisionKeys[i] = defaultInsertKey;
+      collisionKeys[i].aSignedInt16 = defaultInsertKey.aSignedInt16 + i + 1; // something to be unique
+      collisionKeys[i].uniqueIndex = (firstLevelCapacity + i);
+    }
+    // double collisions to same indices as above
+    for(u64 i = halfCollisionCount; i < collisionKeysCount; i++) {
+      collisionKeys[i] = defaultInsertKey;
+      collisionKeys[i].aSignedInt16 = defaultInsertKey.aSignedInt16 + i + 1; // something to be unique
+      collisionKeys[i].uniqueIndex = (firstLevelCapacity + i - halfCollisionCount);
+    }
+
+    for(u32 i = 0; i < notInsertedDataCount; i++) {
+      notInsertedTestKeys[i] = default_NOT_InsertKey;
+      notInsertedTestKeys[i].uniqueIndex = i;
+    }
+
+    // fill up hash set
+    for(TestKey_hs& testData : firstWaveTestKeys) {
+      testDataHashSet->insert(&testData);
+    }
+
+    // cause some collisions
+    for(TestKey_hs& testData : collisionKeys) {
+      testDataHashSet->insert(&testData);
+    }
   }
 
-  const u64 collisionDataCount = 10;
-  const u64 halfCollisionCount = collisionDataCount / 2;
-  TestData collisionData[collisionDataCount];
-  // collisions
-  for(u64 i = 0; i < halfCollisionCount; i++) {
-    collisionData[i] = defaultInsertData;
-    collisionData[i].aSignedInt16 = defaultInsertData.aSignedInt16 + i + 1; // something to be unique
-    collisionData[i].uniqueIndex = (firstLevelCapacity + i);
+  void TearDown() override { // runs immediately after a test finishes
+    delete testDataHashSet;
   }
-  // double collisions to same indices as above
-  for(u64 i = halfCollisionCount; i < collisionDataCount; i++) {
-    collisionData[i] = defaultInsertData;
-    collisionData[i].aSignedInt16 = defaultInsertData.aSignedInt16 + i + 1; // something to be unique
-    collisionData[i].uniqueIndex = (firstLevelCapacity + i - halfCollisionCount);
-  }
+};
 
-  const TestData notInsertedData{
-    0,
-    400.0f,
-    300.0,
-    false,
-    100
-  };
-
-  const u64 notInsertedDataCount = firstWaveInsertCount;
-  TestData notInsertedTestData[notInsertedDataCount];
-  for(u32 i = 0; i < notInsertedDataCount; i++) {
-    notInsertedTestData[i] = notInsertedData;
-    notInsertedTestData[i].uniqueIndex = i;
-  }
-
-  HashSet testDataHashSet = HashSet(sizeof(TestData), hash_set_test_data_hash, hash_set_test_data_equals, firstLevelCapacity);
-
-  // fill up hash set
-  for(TestData& testData : firstWaveTestData) {
-    testDataHashSet.insert(&testData);
-  }
-
-  // cause some collisions
-  for(TestData& testData : collisionData) {
-    testDataHashSet.insert(&testData);
-  }
-
+TEST_F(HashSetTest, inserts_contains_collisions) {
   // assert first round of data was inserted
-  for(TestData& testData : firstWaveTestData) {
-    ASSERT_TRUE(testDataHashSet.contains(&testData));
+  for(TestKey_hs& testData : firstWaveTestKeys) {
+    ASSERT_TRUE(testDataHashSet->contains(&testData));
   }
 
   // assert collision round of data was inserted
-  for(TestData& testData : collisionData) {
-    ASSERT_TRUE(testDataHashSet.contains(&testData));
+  for(TestKey_hs& testData : collisionKeys) {
+    ASSERT_TRUE(testDataHashSet->contains(&testData));
   }
 
   // assert non-inserted data is properly reported as not contained
-  for(TestData& testData : notInsertedTestData) {
-    ASSERT_FALSE(testDataHashSet.contains(&testData));
+  for(TestKey_hs& testData : notInsertedTestKeys) {
+    ASSERT_FALSE(testDataHashSet->contains(&testData));
   }
 
-  ASSERT_EQ(collisionDataCount, testDataHashSet.collisionsCount);
-  ASSERT_EQ(collisionDataCount + firstLevelCapacity, testDataHashSet.elementsCount);
+  ASSERT_EQ(collisionKeysCount, testDataHashSet->collisionsCount);
+  ASSERT_EQ(collisionKeysCount + firstLevelCapacity, testDataHashSet->elementsCount);
+}
+
+TEST(HashSet, insert_remove) {
+  const u64 firstLevelCapacity = 16;
+  TestKey_hs insertKey{
+          0,
+          1.0f,
+          2.0,
+          true,
+          4
+  };
+  TestKey_hs insertThenRemoveKey1{
+          insertKey.uniqueIndex,
+          2.0f,
+          3.0,
+          false,
+          5
+  };
+  TestKey_hs insertThenRemoveKey2 = insertThenRemoveKey1;
+  ++insertThenRemoveKey2.aSignedInt16; // make unique
+  TestKey_hs insertThenRemoveKey3 = insertThenRemoveKey2;
+  ++insertThenRemoveKey2.aSignedInt16; // make unique
+
+  HashSet testDataHashSet = HashSet(sizeof(TestKey_hs), hash_set_test_data_hash, hash_set_test_data_equals, firstLevelCapacity);
+
+  testDataHashSet.insert(&insertThenRemoveKey1); // to test removing from front
+  testDataHashSet.insert(&insertKey);
+  testDataHashSet.insert(&insertThenRemoveKey2); // to test removing from middle
+  testDataHashSet.insert(&insertThenRemoveKey3); // to test removing from end
+
+  ASSERT_EQ(testDataHashSet.elementsCount, 4);
+  ASSERT_EQ(testDataHashSet.collisionsCount, 3);
+  ASSERT_EQ(testDataHashSet.recyclingElementsCount, 0);
+  ASSERT_TRUE(testDataHashSet.contains(&insertKey));
+  ASSERT_TRUE(testDataHashSet.contains(&insertThenRemoveKey1));
+  ASSERT_TRUE(testDataHashSet.contains(&insertThenRemoveKey2));
+  ASSERT_TRUE(testDataHashSet.contains(&insertThenRemoveKey3));
+
+  // remove first element added
+  testDataHashSet.remove(&insertThenRemoveKey1);
+
+  ASSERT_EQ(testDataHashSet.elementsCount, 3);
+  ASSERT_EQ(testDataHashSet.collisionsCount, 2);
+  ASSERT_EQ(testDataHashSet.recyclingElementsCount, 1);
+  ASSERT_TRUE(testDataHashSet.contains(&insertKey));
+  ASSERT_FALSE(testDataHashSet.contains(&insertThenRemoveKey1));
+  ASSERT_TRUE(testDataHashSet.contains(&insertThenRemoveKey2));
+  ASSERT_TRUE(testDataHashSet.contains(&insertThenRemoveKey3));
+
+  // remove middle element added
+  testDataHashSet.remove(&insertThenRemoveKey2);
+
+  ASSERT_EQ(testDataHashSet.elementsCount, 2);
+  ASSERT_EQ(testDataHashSet.collisionsCount, 1);
+  ASSERT_EQ(testDataHashSet.recyclingElementsCount, 2);
+  ASSERT_TRUE(testDataHashSet.contains(&insertKey));
+  ASSERT_FALSE(testDataHashSet.contains(&insertThenRemoveKey1));
+  ASSERT_FALSE(testDataHashSet.contains(&insertThenRemoveKey2));
+  ASSERT_TRUE(testDataHashSet.contains(&insertThenRemoveKey3));
+
+  // remove last element added
+  testDataHashSet.remove(&insertThenRemoveKey3);
+
+  ASSERT_EQ(testDataHashSet.elementsCount, 1);
+  ASSERT_EQ(testDataHashSet.collisionsCount, 0);
+  ASSERT_EQ(testDataHashSet.recyclingElementsCount, 3);
+  ASSERT_TRUE(testDataHashSet.contains(&insertKey));
+  ASSERT_FALSE(testDataHashSet.contains(&insertThenRemoveKey1));
+  ASSERT_FALSE(testDataHashSet.contains(&insertThenRemoveKey2));
+  ASSERT_FALSE(testDataHashSet.contains(&insertThenRemoveKey3));
+}
+
+struct TestKey_hm {
+  char fourCharCode[4]; // key
+};
+
+struct TestData_hm {
+  u32 anUnsignedInt32;
+  s8 aSignedInt8;
+  f64 aDouble;
+};
+
+struct TestEntry_hm {
+  TestKey_hm key;
+  TestData_hm datum;
+};
+
+HASH_FUNC_HASH(hash_map_test_data_hash) {
+  TestKey_hm* testData = (TestKey_hm*)key;
+  const u32 normalizeRange = 4 * 'a';
+  u64 hash = testData->fourCharCode[0] +
+          testData->fourCharCode[1] +
+          testData->fourCharCode[2] +
+          testData->fourCharCode[3];
+  hash -= normalizeRange;
+  return hash;
+}
+
+HASH_FUNC_EQUALS(hash_map_test_data_equals) {
+  TestKey_hm* testData1 = (TestKey_hm*)key1;
+  TestKey_hm* testData2 = (TestKey_hm*)key2;
+  return testData1->fourCharCode[0] == testData2->fourCharCode[0] &&
+         testData1->fourCharCode[1] == testData2->fourCharCode[1] &&
+         testData1->fourCharCode[2] == testData2->fourCharCode[2] &&
+         testData1->fourCharCode[3] == testData2->fourCharCode[3];
+}
+
+TEST(HashMap, doesnt_immediately_crash) {
+  const u64 firstLevelCapacity = 16;
+  HashMap testDataHashMap = HashMap(sizeof(TestKey_hm), sizeof(TestData_hm), hash_map_test_data_hash, hash_map_test_data_equals, firstLevelCapacity);
+
+  TestEntry_hm entry{};
+  entry.key.fourCharCode[0] = 'a';
+  entry.key.fourCharCode[1] = 'b';
+  entry.key.fourCharCode[2] = 'c';
+  entry.key.fourCharCode[3] = 'd';
+  entry.datum.anUnsignedInt32 = 1;
+  entry.datum.aSignedInt8 = 2;
+  entry.datum.aDouble = 3.0;
+
+  testDataHashMap.insert(&entry.key, &entry.datum);
+
+  ASSERT_TRUE(testDataHashMap.contains(&entry.key));
+
+  TestData_hm* dataRetrieved = (TestData_hm*)testDataHashMap.retrieve(&entry.key);
+  ASSERT_EQ(entry.datum.anUnsignedInt32, dataRetrieved->anUnsignedInt32);
+  ASSERT_EQ(entry.datum.aSignedInt8, dataRetrieved->aSignedInt8);
+  ASSERT_EQ(entry.datum.aDouble, dataRetrieved->aDouble);
 }
