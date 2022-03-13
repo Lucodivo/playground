@@ -3,7 +3,11 @@
 // Generic hash set by just throwing around void pointers
 //
 
-struct HashSet {
+// TODO: clear() function?
+// TODO: Should first level hold actual keys? or continue to hold pointers to elements?
+// TODO: malloc more elements when capacity is met
+// TODO: Inserting at the front of a slot is faster, if we don't care about duplicate values
+struct HashSetVoid {
   u64 firstLevelCapacity;
   u64 firstLevelMemSize;
 
@@ -19,7 +23,7 @@ struct HashSet {
   u64 keySize;
 
   void* mallocPtr;
-  void** firstLevelPtrs; // TODO: Consider changing the first level array from holding a pointer to holding an actual element
+  void** firstLevelPtrs;
   void* unusedElements;
   void* recyclingElements;
   u64 totalMallocSize;
@@ -27,7 +31,7 @@ struct HashSet {
   hash_func_hash* hashFunc = HashFuncHashStub;
   hash_func_equals* equalsFunc = HashFuncEqualsStub;
 
-  HashSet(u64 keySize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 firstLevelCapacity_ = 1024) {
+  HashSetVoid(u64 keySize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 firstLevelCapacity_ = 1024) {
     keySize = keySize_;
     hashFunc = hashFunc_;
     equalsFunc = equalsFunc_;
@@ -52,29 +56,8 @@ struct HashSet {
     recyclingElements = nullptr;
   }
 
-  ~HashSet() {
+  ~HashSetVoid() {
     free(mallocPtr);
-    mallocPtr = nullptr;
-    firstLevelPtrs = nullptr;
-    unusedElements = nullptr;
-    recyclingElements = nullptr;
-    totalMallocSize = 0;
-
-    keySize = 0;
-    hashFunc = HashFuncHashStub;
-    equalsFunc = HashFuncEqualsStub;
-
-    firstLevelCapacity = 0;
-    firstLevelMemSize = 0;
-
-    elementsCapacity = 0;
-    elementSize = 0;
-    elementsMemSize = 0;
-
-    unusedElementsCount = 0;
-    recyclingElementsCount = 0;
-    elementsCount = 0;
-    collisionsCount = 0;
   }
 
   void parseVoidPtrData(void* elementPtr, void*& outKey, void**& outNext){
@@ -99,8 +82,7 @@ struct HashSet {
       unusedElements = (char*)unusedElements + elementSize;
       unusedElementsCount--;
     } else {
-      // TODO: malloc more elements
-      printf("Error: HashSet at capacity.\n");
+      printf("Error: HashSetVoid at capacity.\n");
       nextFree = nullptr;
     }
 

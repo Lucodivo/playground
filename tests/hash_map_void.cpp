@@ -1,10 +1,14 @@
 //
 // Created by Connor on 3/9/2022.
 // Generic hash map by just throwing pointers around
-// HashMap holds shallow copies (literally just memcpy) of data inserted
+// HashMapVoid holds shallow copies (literally just memcpy) of data inserted
 //
 
-struct HashMap {
+// TODO: clear() function?
+// TODO: Should first level hold a actual elements? or continue to just hold pointers to elements?
+// TODO: malloc more elements when capacity is met
+// TODO: Inserting at the front of a slot is faster, if we don't care about duplicate values
+struct HashMapVoid {
   u64 firstLevelCapacity;
   u64 firstLevelMemSize;
 
@@ -25,7 +29,7 @@ struct HashMap {
   u64 nextElementOffset;
 
   void* mallocPtr;
-  void** firstLevelPtrs; // TODO: Consider changing the first level array from holding a pointer to holding an actual element
+  void** firstLevelPtrs;
   void* unusedElements;
   void* recyclingElements;
   u64 totalMallocSize;
@@ -33,7 +37,7 @@ struct HashMap {
   hash_func_hash* hashFunc = HashFuncHashStub;
   hash_func_equals* equalsFunc = HashFuncEqualsStub;
 
-  HashMap(u64 keySize_, u64 datumSize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 firstLevelCapacity_ = 1024) {
+  HashMapVoid(u64 keySize_, u64 datumSize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 firstLevelCapacity_ = 1024) {
     keySize = keySize_;
     datumSize = datumSize_;
     hashFunc = hashFunc_;
@@ -64,30 +68,8 @@ struct HashMap {
     recyclingElements = nullptr;
   }
 
-  ~HashMap() {
+  ~HashMapVoid() {
     free(mallocPtr);
-    mallocPtr = nullptr;
-    firstLevelPtrs = nullptr;
-    unusedElements = nullptr;
-    recyclingElements = nullptr;
-    totalMallocSize = 0;
-
-    keySize = 0;
-    datumSize = 0;
-    hashFunc = HashFuncHashStub;
-    equalsFunc = HashFuncEqualsStub;
-
-    firstLevelCapacity = 0;
-    firstLevelMemSize = 0;
-
-    elementsCapacity = 0;
-    elementSize = 0;
-    elementsMemSize = 0;
-
-    unusedElementsCount = 0;
-    recyclingElementsCount = 0;
-    elementsCount = 0;
-    collisionsCount = 0;
   }
 
   void* parseElementPtr_key(void* elementPtr) const {
@@ -120,8 +102,7 @@ struct HashMap {
       unusedElements = (char*)unusedElements + elementSize;
       unusedElementsCount--;
     } else {
-      // TODO: malloc more elements
-      printf("Error: HashMap at capacity.\n");
+      printf("Error: HashMapVoid at capacity.\n");
       nextFree = nullptr;
     }
 
@@ -152,7 +133,6 @@ struct HashMap {
     *newNextElementPtr = next;
   }
 
-  // TODO: Can just insert at the front of the list if we don't care about duplicate values
   void insert(void* key, void* datum) {
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
@@ -179,7 +159,7 @@ struct HashMap {
     }
   }
 
-  void* retrieve(void* key) const {
+  bool retrieve(void* key, void* outDatum) const {
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
 
@@ -189,13 +169,14 @@ struct HashMap {
 
       if(equalsFunc(key, foundKey)) {
         void* foundDatum = parseElementPtr_datum(*foundElementPtr);
-        return foundDatum;
+        memcpy(outDatum, foundDatum, datumSize);
+        return true;
       }
 
       foundElementPtr = parseElementPtr_next(*foundElementPtr);
     }
 
-    return nullptr;
+    return false;
   }
 
   bool remove(void* key) {

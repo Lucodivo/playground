@@ -5,8 +5,8 @@
 #include "test.h"
 
 #include "hash_func_defines.h"
-#include "hash_set.cpp"
-#include "hash_map.cpp"
+#include "hash_set_void.cpp"
+#include "hash_map_void.cpp"
 
 struct TestKey_hs {
   u64 uniqueIndex;
@@ -31,7 +31,7 @@ HASH_FUNC_EQUALS(hash_set_test_data_equals) {
         testKey1->aSignedInt16 == testKey2->aSignedInt16;
 }
 
-class HashSetTest : public testing::Test {
+class HashSetVoidTest : public testing::Test {
 public:
   const class_access u64 firstLevelCapacity = 16;
   const class_access u64 firstWaveInsertCount = firstLevelCapacity;
@@ -41,11 +41,11 @@ public:
   TestKey_hs firstWaveTestKeys[firstLevelCapacity];
   TestKey_hs collisionKeys[collisionKeysCount];
   TestKey_hs notInsertedTestKeys[notInsertedDataCount];
-  HashSet* testDataHashSet;
+  HashSetVoid* testDataHashSet;
 
-  // Init HashSet and fill it up with data
+  // Init HashSetVoid and fill it up with data
   void SetUp() override { // runs immediately before a test starts
-    testDataHashSet = new HashSet(sizeof(TestKey_hs), hash_set_test_data_hash, hash_set_test_data_equals, firstLevelCapacity);
+    testDataHashSet = new HashSetVoid(sizeof(TestKey_hs), hash_set_test_data_hash, hash_set_test_data_equals, firstLevelCapacity);
 
     const TestKey_hs defaultInsertKey{
             0,
@@ -103,7 +103,7 @@ public:
   }
 };
 
-TEST_F(HashSetTest, inserts_contains_collisions) {
+TEST_F(HashSetVoidTest, inserts_contains_collisions) {
   // assert first round of data was inserted
   for(TestKey_hs& testData : firstWaveTestKeys) {
   ASSERT_TRUE(testDataHashSet->contains(&testData));
@@ -123,7 +123,7 @@ TEST_F(HashSetTest, inserts_contains_collisions) {
   ASSERT_EQ(collisionKeysCount + firstLevelCapacity, testDataHashSet->elementsCount);
 }
 
-TEST(HashSet, insert_remove) {
+TEST(HashSetVoid, insert_remove) {
   const u64 firstLevelCapacity = 16;
   TestKey_hs insertKey{
           0,
@@ -144,7 +144,7 @@ TEST(HashSet, insert_remove) {
   TestKey_hs insertThenRemoveKey3 = insertThenRemoveKey2;
   ++insertThenRemoveKey2.aSignedInt16; // make unique
 
-  HashSet testDataHashSet = HashSet(sizeof(TestKey_hs), hash_set_test_data_hash, hash_set_test_data_equals, firstLevelCapacity);
+  HashSetVoid testDataHashSet = HashSetVoid(sizeof(TestKey_hs), hash_set_test_data_hash, hash_set_test_data_equals, firstLevelCapacity);
 
   testDataHashSet.insert(&insertThenRemoveKey1); // to test removing from front
   testDataHashSet.insert(&insertKey);
@@ -195,7 +195,7 @@ TEST(HashSet, insert_remove) {
 
 struct TestKey_hm {
   u64 uniqueIndex;
-  char fourCharCode[4]; // key
+  char fourCharCode[4];
 };
 
 struct TestData_hm {
@@ -231,7 +231,7 @@ HASH_FUNC_EQUALS(hash_map_test_data_equals) {
   testData1->fourCharCode[3] == testData2->fourCharCode[3];
 }
 
-class HashMapTest : public testing::Test {
+class HashMapVoidTest : public testing::Test {
 public:
   const class_access u64 firstLevelCapacity = 16;
   const class_access u64 firstWaveInsertCount = firstLevelCapacity;
@@ -241,17 +241,11 @@ public:
   TestEntry_hm firstWaveTestEntries[firstLevelCapacity];
   TestEntry_hm collisionEntries[collisionsCount];
   TestEntry_hm notInsertedTestEntries[notInsertedCount];
-  HashMap* testDataHashSet;
+  HashMapVoid* testDataHashSet;
 
-  // Init HashSet and fill it up with data
+  // Init HashSetVoid and fill it up with data
   void SetUp() override { // runs immediately before a test starts
-    testDataHashSet = new HashMap(sizeof(TestKey_hm), sizeof(TestData_hm), hash_map_test_data_hash, hash_map_test_data_equals, firstLevelCapacity);
-
-    const TestData_hm default_NOT_InsertDatum {
-            6,
-            6,
-            6.0
-    };
+    testDataHashSet = new HashMapVoid(sizeof(TestKey_hm), sizeof(TestData_hm), hash_map_test_data_hash, hash_map_test_data_equals, firstLevelCapacity);
 
     for(u32 i = 0; i < firstWaveInsertCount; i++) {
       firstWaveTestEntries[i].key.uniqueIndex = i;
@@ -317,38 +311,39 @@ public:
   }
 };
 
-TEST_F(HashMapTest, insert_retrieve) {
+TEST_F(HashMapVoidTest, insert_retrieve) {
   // assert first round of data was inserted
   for(TestEntry_hm& testEntry : firstWaveTestEntries) {
     ASSERT_TRUE(testDataHashSet->contains(&testEntry.key));
-    TestData_hm* testDataPtr = (TestData_hm*)testDataHashSet->retrieve(&testEntry.key);
-    ASSERT_NE(testDataPtr, nullptr);
-    ASSERT_EQ(testEntry.datum.aDouble, testDataPtr->aDouble);
-    ASSERT_EQ(testEntry.datum.aSignedInt8, testDataPtr->aSignedInt8);
-    ASSERT_EQ(testEntry.datum.anUnsignedInt32, testDataPtr->anUnsignedInt32);
+    TestData_hm testDataPtr;
+    ASSERT_TRUE(testDataHashSet->retrieve(&testEntry.key, &testDataPtr));
+    ASSERT_EQ(testEntry.datum.aDouble, testDataPtr.aDouble);
+    ASSERT_EQ(testEntry.datum.aSignedInt8, testDataPtr.aSignedInt8);
+    ASSERT_EQ(testEntry.datum.anUnsignedInt32, testDataPtr.anUnsignedInt32);
   }
 
   // assert collision round of data was inserted and can be retrieved
   for(TestEntry_hm& testEntry : collisionEntries) {
     ASSERT_TRUE(testDataHashSet->contains(&testEntry.key));
-    TestData_hm* testDataPtr = (TestData_hm*)testDataHashSet->retrieve(&testEntry.key);
-    ASSERT_NE(testDataPtr, nullptr);
-    ASSERT_EQ(testEntry.datum.aDouble, testDataPtr->aDouble);
-    ASSERT_EQ(testEntry.datum.aSignedInt8, testDataPtr->aSignedInt8);
-    ASSERT_EQ(testEntry.datum.anUnsignedInt32, testDataPtr->anUnsignedInt32);
+    TestData_hm testDataPtr;
+    ASSERT_TRUE(testDataHashSet->retrieve(&testEntry.key, &testDataPtr));
+    ASSERT_EQ(testEntry.datum.aDouble, testDataPtr.aDouble);
+    ASSERT_EQ(testEntry.datum.aSignedInt8, testDataPtr.aSignedInt8);
+    ASSERT_EQ(testEntry.datum.anUnsignedInt32, testDataPtr.anUnsignedInt32);
   }
 
   // assert non-inserted data is properly reported as not contained
   for(TestEntry_hm& testEntry : notInsertedTestEntries) {
     ASSERT_FALSE(testDataHashSet->contains(&testEntry.key));
-    ASSERT_EQ(testDataHashSet->retrieve(&testEntry.key), nullptr);
+    TestData_hm testDataPtr;
+    ASSERT_FALSE(testDataHashSet->retrieve(&testEntry.key, &testDataPtr));
   }
 
   ASSERT_EQ(collisionsCount, testDataHashSet->collisionsCount);
   ASSERT_EQ(collisionsCount + firstLevelCapacity, testDataHashSet->elementsCount);
 }
 
-TEST_F(HashMapTest, insert_remove) {
+TEST_F(HashMapVoidTest, insert_remove) {
   u32 halfFirstWaveInsertCount = firstWaveInsertCount / 2;
 
   // remove half of the first wave
@@ -361,18 +356,19 @@ TEST_F(HashMapTest, insert_remove) {
   for(u32 i = 0; i < halfFirstWaveInsertCount; ++i){
     TestEntry_hm& testEntry = firstWaveTestEntries[i];
     ASSERT_FALSE(testDataHashSet->contains(&testEntry.key));
-    ASSERT_EQ(testDataHashSet->retrieve(&testEntry.key), nullptr);
+    TestData_hm testDataPtr;
+    ASSERT_FALSE(testDataHashSet->retrieve(&testEntry.key, &testDataPtr));
   }
 
   // assert that the second half remains unchanged
   for(u32 i = halfFirstWaveInsertCount; i < firstWaveInsertCount; ++i){
     TestEntry_hm& testEntry = firstWaveTestEntries[i];
     ASSERT_TRUE(testDataHashSet->contains(&testEntry.key));
-    TestData_hm* testDataPtr = (TestData_hm*)testDataHashSet->retrieve(&testEntry.key);
-    ASSERT_NE(testDataPtr, nullptr);
-    ASSERT_EQ(testEntry.datum.aDouble, testDataPtr->aDouble);
-    ASSERT_EQ(testEntry.datum.aSignedInt8, testDataPtr->aSignedInt8);
-    ASSERT_EQ(testEntry.datum.anUnsignedInt32, testDataPtr->anUnsignedInt32);
+    TestData_hm testDataPtr;
+    ASSERT_TRUE(testDataHashSet->retrieve(&testEntry.key, &testDataPtr));
+    ASSERT_EQ(testEntry.datum.aDouble, testDataPtr.aDouble);
+    ASSERT_EQ(testEntry.datum.aSignedInt8, testDataPtr.aSignedInt8);
+    ASSERT_EQ(testEntry.datum.anUnsignedInt32, testDataPtr.anUnsignedInt32);
   }
 
   u32 halfCollisionInsertCount = collisionsCount / 2;
@@ -387,18 +383,19 @@ TEST_F(HashMapTest, insert_remove) {
   for(u32 i = 0; i < halfCollisionInsertCount; ++i){
     TestEntry_hm& testEntry = collisionEntries[i];
     ASSERT_FALSE(testDataHashSet->contains(&testEntry.key));
-    ASSERT_EQ(testDataHashSet->retrieve(&testEntry.key), nullptr);
+    TestData_hm testDataPtr;
+    ASSERT_FALSE(testDataHashSet->retrieve(&testEntry.key, &testDataPtr));
   }
 
   // assert that the second half remains unchanged
   for(u32 i = halfCollisionInsertCount; i < collisionsCount; ++i){
     TestEntry_hm& testEntry = collisionEntries[i];
     ASSERT_TRUE(testDataHashSet->contains(&testEntry.key));
-    TestData_hm* testDataPtr = (TestData_hm*)testDataHashSet->retrieve(&testEntry.key);
-    ASSERT_NE(testDataPtr, nullptr);
-    ASSERT_EQ(testEntry.datum.aDouble, testDataPtr->aDouble);
-    ASSERT_EQ(testEntry.datum.aSignedInt8, testDataPtr->aSignedInt8);
-    ASSERT_EQ(testEntry.datum.anUnsignedInt32, testDataPtr->anUnsignedInt32);
+    TestData_hm testDataPtr;
+    ASSERT_TRUE(testDataHashSet->retrieve(&testEntry.key, &testDataPtr));
+    ASSERT_EQ(testEntry.datum.aDouble, testDataPtr.aDouble);
+    ASSERT_EQ(testEntry.datum.aSignedInt8, testDataPtr.aSignedInt8);
+    ASSERT_EQ(testEntry.datum.anUnsignedInt32, testDataPtr.anUnsignedInt32);
   }
 
   // The collisions are initialized to double up for the hash values of 0-halfCollisionCount

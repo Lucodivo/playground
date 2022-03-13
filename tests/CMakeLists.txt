@@ -30,15 +30,22 @@ add_executable(
 target_link_libraries(dictionary_trie_tests ${LIBS})
 
 add_executable(
-        hash_set_and_map_tests
-        hash_set_and_map_tests.cpp
+        hash_set_and_map_void_tests
+        hash_set_and_map_void_tests.cpp
 )
-target_link_libraries(hash_set_and_map_tests ${LIBS})
+target_link_libraries(hash_set_and_map_void_tests ${LIBS})
+
+add_executable(
+        hash_map_template_tests
+        hash_map_template_tests.cpp
+)
+target_link_libraries(hash_map_template_tests ${LIBS})
 
 include(GoogleTest)
 gtest_discover_tests(
         playground_tests
         linked_list_tests
         dictionary_trie_tests
-        hash_set_and_map_tests
+        hash_set_and_map_void_tests
+        hash_map_template_tests
 )
