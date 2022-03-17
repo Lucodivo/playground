@@ -3,10 +3,8 @@
 // Generic hash set by just throwing around void pointers
 //
 
-// TODO: clear() function?
 // TODO: Should first level hold actual keys? or continue to hold pointers to elements?
-// TODO: malloc more elements when capacity is met
-// TODO: Inserting at the front of a slot is faster, if we don't care about duplicate values
+// TODO: Calculate collisions only when asked. No keeping track of them.
 struct HashSetVoid {
   u64 firstLevelCapacity;
   u64 firstLevelMemSize;
@@ -22,24 +20,35 @@ struct HashSetVoid {
 
   u64 keySize;
 
+  const class_access u64 keyOffset = 0;
+  u64 nextElementOffset;
+
   void* mallocPtr;
-  void** firstLevelPtrs;
-  void* unusedElements;
-  void* recyclingElements;
+  void** firstElementsPtrArray;
+  void* unusedElementsArray;
+  void* recyclingElementsList;
   u64 totalMallocSize;
 
   hash_func_hash* hashFunc = HashFuncHashStub;
   hash_func_equals* equalsFunc = HashFuncEqualsStub;
 
-  HashSetVoid(u64 keySize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 firstLevelCapacity_ = 1024) {
+  HashSetVoid(u64 keySize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 capacity = 1024) {
+    if(capacity < 2) { // capacity is now allowed to be less than 2
+      capacity = 2;
+    }
+
     keySize = keySize_;
     hashFunc = hashFunc_;
     equalsFunc = equalsFunc_;
 
-    firstLevelCapacity = firstLevelCapacity_;
+    // pad the elements
+    u64 minAlignment = 8;
+    nextElementOffset = ((keySize + (minAlignment - 1)) / minAlignment) * minAlignment;
+
+    firstLevelCapacity = capacity / 2;
     firstLevelMemSize = firstLevelCapacity * sizeof(void**);
 
-    elementsCapacity = firstLevelCapacity * 2;
+    elementsCapacity = capacity;
     elementSize = keySize + sizeof(void*); // key + next ptr
     elementsMemSize = elementsCapacity * elementSize;
 
@@ -51,18 +60,33 @@ struct HashSetVoid {
     totalMallocSize = firstLevelMemSize + elementsMemSize;
     mallocPtr = malloc(totalMallocSize);
     memset(mallocPtr, 0, totalMallocSize);
-    firstLevelPtrs = (void**)mallocPtr;
-    unusedElements = firstLevelPtrs + firstLevelCapacity;
-    recyclingElements = nullptr;
+    firstElementsPtrArray = (void**)mallocPtr;
+    unusedElementsArray = firstElementsPtrArray + firstLevelCapacity;
+    recyclingElementsList = nullptr;
   }
 
   ~HashSetVoid() {
     free(mallocPtr);
   }
 
-  void parseVoidPtrData(void* elementPtr, void*& outKey, void**& outNext){
-    outKey = elementPtr;
-    outNext = (void**)((char*)elementPtr + keySize);
+  void* parseElementPtr_key(void* elementPtr) const {
+    return elementPtr; // + keyOffset (which is zero)
+  }
+
+  void** parseElementPtr_next(void* elementPtr) const {
+    return (void**)((char*)elementPtr + nextElementOffset);
+  }
+
+  void clear() {
+    unusedElementsCount = elementsCapacity;
+    recyclingElementsCount = 0;
+    elementsCount = 0;
+    collisionsCount = 0;
+
+    memset(mallocPtr, 0, totalMallocSize);
+    firstElementsPtrArray = (void**)mallocPtr;
+    unusedElementsArray = firstElementsPtrArray + firstLevelCapacity;
+    recyclingElementsList = nullptr;
   }
 
   void* nextFreeElement() {
@@ -70,16 +94,13 @@ struct HashSetVoid {
     void* nextFree;
 
     // check recycled elements first
-    if(recyclingElements != nullptr) {
-      void* key;
-      void** nextElementPtr;
-      parseVoidPtrData(recyclingElements, key, nextElementPtr);
-      nextFree = key;
-      recyclingElements = *nextElementPtr;
+    if(recyclingElementsList != nullptr) {
+      nextFree = recyclingElementsList;
+      recyclingElementsList = *parseElementPtr_next(nextFree);
       --recyclingElementsCount;
     } else if(unusedElementsCount > 0){
-      nextFree = unusedElements;
-      unusedElements = (char*)unusedElements + elementSize;
+      nextFree = unusedElementsArray;
+      unusedElementsArray = (char*)unusedElementsArray + elementSize;
       unusedElementsCount--;
     } else {
       printf("Error: HashSetVoid at capacity.\n");
@@ -93,40 +114,92 @@ struct HashSetVoid {
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
 
-    void** foundElementPtr = firstLevelPtrs + arrayIndex;
+    void** foundElementPtr = firstElementsPtrArray + arrayIndex;
     while(*foundElementPtr != nullptr) {
-      void* foundKey;
-      void** foundNextPtr;
-      parseVoidPtrData(*foundElementPtr, foundKey, foundNextPtr);
-      if(equalsFunc(key, foundKey)) {
+      if(equalsFunc(key, parseElementPtr_key(*foundElementPtr))) {
         return true;
       }
-      foundElementPtr = foundNextPtr;
+      foundElementPtr = parseElementPtr_next(*foundElementPtr);
     }
     return false;
   }
 
+  void resize(u64 newCapacity){
+    if(newCapacity < 2) { // capacity is not allowed to be less than 2
+      newCapacity = 2;
+    }
+
+    // keep old member variables accessible
+    u64 old_firstLevelCapacity = firstLevelCapacity;
+    void* old_mallocPtr = mallocPtr;
+    void** old_firstElementsPtrArray = firstElementsPtrArray;
+
+    // update new member variables
+    firstLevelCapacity = newCapacity / 2;
+    firstLevelMemSize = firstLevelCapacity * sizeof(void*);
+
+    elementsCapacity = newCapacity;
+    elementsMemSize = elementsCapacity * elementSize;
+
+    unusedElementsCount = elementsCapacity;
+    recyclingElementsCount = 0;
+    elementsCount = 0;
+    collisionsCount = 0;
+
+    totalMallocSize = firstLevelMemSize + elementsMemSize;
+    mallocPtr = malloc(totalMallocSize);
+    memset(mallocPtr, 0, totalMallocSize);
+    firstElementsPtrArray = (void**)mallocPtr;
+    unusedElementsArray = (void*)((char*)mallocPtr + firstLevelMemSize);
+    recyclingElementsList = nullptr;
+
+    // traverse the old data and use insert to put it into the new array
+    void** firstElementPtrsIterator = old_firstElementsPtrArray;
+    for(u64 i = 0; i < old_firstLevelCapacity; ++i) {
+
+      void* elementsIterator = *firstElementPtrsIterator;
+      while(elementsIterator != nullptr) {
+        if(elementsCount == elementsCapacity) {
+          // If the hash map was resized to be smaller, we don't want to insert more elements than the current capacity.
+          break;
+        }
+
+        insert(parseElementPtr_key(elementsIterator));
+        elementsIterator = *parseElementPtr_next(elementsIterator);
+      }
+
+      ++firstElementPtrsIterator;
+    }
+
+    free(old_mallocPtr);
+  }
+
   void insert(void* key) {
+
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
 
     bool wasCollision = false;
-    void** foundKeyPtr = firstLevelPtrs + arrayIndex;
-    while(*foundKeyPtr != nullptr) {
+    void** foundElementPtr = firstElementsPtrArray + arrayIndex;
+    while(*foundElementPtr != nullptr) {
       wasCollision = true;
-      void* foundKey;
-      void** foundNextPtr;
-      parseVoidPtrData(*foundKeyPtr, foundKey, foundNextPtr);
-      if(equalsFunc(key, foundKey)) {
-        printf("Attempting to insert same item twice.\n");
+      if(equalsFunc(key, parseElementPtr_key(*foundElementPtr))) {
+        // NOTE: Key inserted into set more than once. Do nothing.
         return;
       }
-      foundKeyPtr = foundNextPtr;
+      foundElementPtr = parseElementPtr_next(*foundElementPtr);
+    }
+
+    // if we need to add a new element and we are out of space, we need to resize the hash set
+    if(elementsCount == elementsCapacity) {
+      resize(elementsCapacity * 2);
+      insert(key);
+      return;
     }
 
     void* newKey = nextFreeElement();
     memcpy(newKey, key, keySize);
-    *foundKeyPtr = newKey;
+    *foundElementPtr = newKey;
     ++elementsCount;
 
     if(wasCollision) {
@@ -138,15 +211,13 @@ struct HashSetVoid {
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
 
-    void** firstLevelElementPtr = firstLevelPtrs + arrayIndex;
+    void** firstLevelElementPtr = firstElementsPtrArray + arrayIndex;
     void** prevNextElementPtr = nullptr;
     void** foundElementPtr = firstLevelElementPtr;
     while(*foundElementPtr != nullptr) {
-      void* foundKey;
-      void** foundNextPtr;
-      parseVoidPtrData(*foundElementPtr, foundKey, foundNextPtr);
 
-      if(equalsFunc(key, foundKey)) {
+      void** foundNextPtr = parseElementPtr_next(*foundElementPtr);
+      if(equalsFunc(key, parseElementPtr_key(*foundElementPtr))) {
         bool removedCollision = false;
         if(foundElementPtr == firstLevelElementPtr) { // first element
           *firstLevelElementPtr = *foundNextPtr;
@@ -161,8 +232,8 @@ struct HashSetVoid {
         }
 
         // add removed element to recycling
-        *foundNextPtr = recyclingElements;
-        recyclingElements = *foundElementPtr;
+        *foundNextPtr = recyclingElementsList;
+        recyclingElementsList = *foundElementPtr;
         if(removedCollision) { --collisionsCount; }
         --elementsCount;
         ++recyclingElementsCount;

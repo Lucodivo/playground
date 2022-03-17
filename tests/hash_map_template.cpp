@@ -85,7 +85,6 @@ struct HashMapTemplate {
     return freeElement;
   }
 
-  // NOTE: Does not check for duplicate values being inserted
   void insert(const S& key, const T& value) {
     u64 hashIndex = hashFunc(key) % firstLevelCapacity;
 
@@ -95,12 +94,23 @@ struct HashMapTemplate {
       firstElement.element.value = value;
       firstElement.element.next = nullptr;
     } else {
-      Element* element = nextFreeElement();
+
+      // check if key already exists in hash map
+      Element* element = &firstElement.element;
+      while(element != nullptr) {
+        // if so, replace value associated with key
+        if(equalsFunc(key, element->key)) {
+          element->value = value;
+          return;
+        }
+        element = element->next;
+      }
+
+      element = nextFreeElement();
       element->key = key;
       element->value = value;
       element->next = firstElement.element.next;
       firstElement.element.next = element;
-      ++collisionCount;
     }
 
     ++firstElement.count;

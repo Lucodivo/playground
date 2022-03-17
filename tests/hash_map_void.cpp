@@ -4,10 +4,8 @@
 // HashMapVoid holds shallow copies (literally just memcpy) of data inserted
 //
 
-// TODO: clear() function?
 // TODO: Should first level hold a actual elements? or continue to just hold pointers to elements?
-// TODO: malloc more elements when capacity is met
-// TODO: Inserting at the front of a slot is faster, if we don't care about duplicate values
+// TODO: Calculate collisions only when asked. No keeping track of them.
 struct HashMapVoid {
   u64 firstLevelCapacity;
   u64 firstLevelMemSize;
@@ -29,29 +27,33 @@ struct HashMapVoid {
   u64 nextElementOffset;
 
   void* mallocPtr;
-  void** firstLevelPtrs;
-  void* unusedElements;
-  void* recyclingElements;
+  void** firstElementsPtrArray;
+  void* unusedElementsArray;
+  void* recyclingElementsList;
   u64 totalMallocSize;
 
   hash_func_hash* hashFunc = HashFuncHashStub;
   hash_func_equals* equalsFunc = HashFuncEqualsStub;
 
-  HashMapVoid(u64 keySize_, u64 datumSize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 firstLevelCapacity_ = 1024) {
+  HashMapVoid(u64 keySize_, u64 datumSize_, hash_func_hash* hashFunc_, hash_func_equals* equalsFunc_, u64 capacity = 1024) {
+    if(capacity < 2) { // capacity is now allowed to be less than 2
+      capacity = 2;
+    }
+
     keySize = keySize_;
     datumSize = datumSize_;
     hashFunc = hashFunc_;
     equalsFunc = equalsFunc_;
-
-    firstLevelCapacity = firstLevelCapacity_;
-    firstLevelMemSize = firstLevelCapacity * sizeof(void*);
 
     // pad the elements
     u64 minAlignment = 8;
     datumOffset = ((keySize + (minAlignment - 1)) / minAlignment) * minAlignment;
     nextElementOffset = datumOffset + (((datumSize + (minAlignment - 1)) / minAlignment) * minAlignment);
 
-    elementsCapacity = firstLevelCapacity * 2;
+    firstLevelCapacity = capacity / 2;
+    firstLevelMemSize = firstLevelCapacity * sizeof(void*);
+
+    elementsCapacity = capacity;
     elementSize = nextElementOffset + sizeof(void**);
     elementsMemSize = elementsCapacity * elementSize;
 
@@ -63,9 +65,9 @@ struct HashMapVoid {
     totalMallocSize = firstLevelMemSize + elementsMemSize;
     mallocPtr = malloc(totalMallocSize);
     memset(mallocPtr, 0, totalMallocSize);
-    firstLevelPtrs = (void**)mallocPtr;
-    unusedElements = firstLevelPtrs + firstLevelCapacity;
-    recyclingElements = nullptr;
+    firstElementsPtrArray = (void**)mallocPtr;
+    unusedElementsArray = (void*)((char*)mallocPtr + firstLevelMemSize);
+    recyclingElementsList = nullptr;
   }
 
   ~HashMapVoid() {
@@ -84,26 +86,85 @@ struct HashMapVoid {
     return (void**)((char*)elementPtr + nextElementOffset);
   }
 
+  void clear() {
+    unusedElementsCount = elementsCapacity;
+    recyclingElementsCount = 0;
+    elementsCount = 0;
+    collisionsCount = 0;
+
+    memset(mallocPtr, 0, totalMallocSize);
+    firstElementsPtrArray = (void**)mallocPtr;
+    unusedElementsArray = (void*)((char*)mallocPtr + firstLevelMemSize);
+    recyclingElementsList = nullptr;
+  }
+
+  void resize(u64 newCapacity){
+    if(newCapacity < 2) { // capacity is not allowed to be less than 2
+      newCapacity = 2;
+    }
+
+    // keep old member variables accessible
+    u64 old_firstLevelCapacity = firstLevelCapacity;
+    void* old_mallocPtr = mallocPtr;
+    void** old_firstElementsPtrArray = firstElementsPtrArray;
+
+    // update new member variables
+    firstLevelCapacity = newCapacity / 2;
+    firstLevelMemSize = firstLevelCapacity * sizeof(void*);
+
+    elementsCapacity = newCapacity;
+    elementsMemSize = elementsCapacity * elementSize;
+
+    unusedElementsCount = elementsCapacity;
+    recyclingElementsCount = 0;
+    elementsCount = 0;
+    collisionsCount = 0;
+
+    totalMallocSize = firstLevelMemSize + elementsMemSize;
+    mallocPtr = malloc(totalMallocSize);
+    memset(mallocPtr, 0, totalMallocSize);
+    firstElementsPtrArray = (void**)mallocPtr;
+    unusedElementsArray = (void*)((char*)mallocPtr + firstLevelMemSize);
+    recyclingElementsList = nullptr;
+
+    // traverse the old data and use insert to put it into the new array
+    void** firstElementPtrsIterator = old_firstElementsPtrArray;
+    for(u64 i = 0; i < old_firstLevelCapacity; ++i) {
+
+      void* elementsIterator = *firstElementPtrsIterator;
+      while(elementsIterator != nullptr) {
+        if(elementsCount == elementsCapacity) {
+          // If the hash map was resized to be smaller, we don't want to insert more elements than the current capacity.
+          break;
+        }
+
+        insert(parseElementPtr_key(elementsIterator), parseElementPtr_datum(elementsIterator));
+        elementsIterator = *parseElementPtr_next(elementsIterator);
+      }
+
+      ++firstElementPtrsIterator;
+    }
+
+    free(old_mallocPtr);
+  }
+
   // Guarantees that the element returned has a next ptr set to nullptr
   // Key and datum in element have no such guarantees
   void* nextFreeElement() {
 
-    void* nextFree;
+    void* nextFree = nullptr;
 
     // check recycled elements first
-    if(recyclingElements != nullptr) {
-      void** nextElementPtr = parseElementPtr_next(recyclingElements);
-      nextFree = recyclingElements;
-      recyclingElements = *nextElementPtr;
+    if(recyclingElementsList != nullptr) {
+      void** nextElementPtr = parseElementPtr_next(recyclingElementsList);
+      nextFree = recyclingElementsList;
+      recyclingElementsList = *nextElementPtr;
       *nextElementPtr = nullptr; // clean the pointer before returning
       --recyclingElementsCount;
-    } else if(unusedElementsCount > 0){
-      nextFree = unusedElements;
-      unusedElements = (char*)unusedElements + elementSize;
-      unusedElementsCount--;
     } else {
-      printf("Error: HashMapVoid at capacity.\n");
-      nextFree = nullptr;
+      nextFree = unusedElementsArray;
+      unusedElementsArray = (char*)unusedElementsArray + elementSize;
+      unusedElementsCount--;
     }
 
     return nextFree;
@@ -113,7 +174,7 @@ struct HashMapVoid {
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
 
-    void** foundElementPtr = firstLevelPtrs + arrayIndex;
+    void** foundElementPtr = firstElementsPtrArray + arrayIndex;
     while(*foundElementPtr != nullptr) {
       void* foundKey = parseElementPtr_key(*foundElementPtr);
       if(equalsFunc(key, foundKey)) {
@@ -136,22 +197,30 @@ struct HashMapVoid {
   void insert(void* key, void* datum) {
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
+    void** firstElementPtr = firstElementsPtrArray + arrayIndex;
 
+    // check for collisions, and for existing key in hashmap
     bool wasCollision = false;
-    void** foundElementPtr = firstLevelPtrs + arrayIndex;
+    void** foundElementPtr = firstElementPtr;
     while(*foundElementPtr != nullptr) {
       wasCollision = true;
-      void* foundKey = parseElementPtr_key(*foundElementPtr);
-      if(equalsFunc(key, foundKey)) {
-        printf("Attempting to insert same item twice.\n");
+      if(equalsFunc(key, parseElementPtr_key(*foundElementPtr))) {
+        memcpy(parseElementPtr_datum(*foundElementPtr), datum, datumSize);
         return;
       }
       foundElementPtr = parseElementPtr_next(*foundElementPtr);;
     }
 
+    // if we need to add a new element and we are out of space, we need to resize the hash set
+    if(elementsCount == elementsCapacity) {
+      resize(elementsCapacity * 2);
+      insert(key, datum);
+      return;
+    }
+
     void* newElement = nextFreeElement();
-    writeElement(newElement, key, datum, nullptr);
-    *foundElementPtr = newElement;
+    writeElement(newElement, key, datum, *firstElementPtr);
+    *firstElementPtr = newElement;
     ++elementsCount;
 
     if(wasCollision) {
@@ -159,11 +228,12 @@ struct HashMapVoid {
     }
   }
 
+  // Returns a memcpy of stored data. In order to avoiding returning a pointer to stored data.
   bool retrieve(void* key, void* outDatum) const {
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
 
-    void** foundElementPtr = firstLevelPtrs + arrayIndex;
+    void** foundElementPtr = firstElementsPtrArray + arrayIndex;
     while(*foundElementPtr != nullptr) {
       void* foundKey = parseElementPtr_key(*foundElementPtr);
 
@@ -179,11 +249,12 @@ struct HashMapVoid {
     return false;
   }
 
+  // TODO: ugly. redo.
   bool remove(void* key) {
     u64 hash = hashFunc(key);
     u64 arrayIndex = hash % firstLevelCapacity;
 
-    void** firstLevelElementPtr = firstLevelPtrs + arrayIndex;
+    void** firstLevelElementPtr = firstElementsPtrArray + arrayIndex;
     void** prevNextElementPtr = nullptr;
     void** foundElementPtr = firstLevelElementPtr;
     while(*foundElementPtr != nullptr) {
@@ -205,8 +276,8 @@ struct HashMapVoid {
         }
 
         // add removed element to recycling
-        *foundNextPtr = recyclingElements;
-        recyclingElements = *foundElementPtr;
+        *foundNextPtr = recyclingElementsList;
+        recyclingElementsList = *foundElementPtr;
         if(removedCollision) { --collisionsCount; }
         --elementsCount;
         ++recyclingElementsCount;

@@ -59,7 +59,7 @@ public:
              key1.fourCharCode[3] == key2.fourCharCode[3];
     };
 
-    //testDataHashSet = new HashMapTemplate<TestKey_hm, TestData_hm>(hashString_func, equalsString_func, firstLevelCapacity); // or use functions
+    //testDataHashMap = new HashMapTemplate<TestKey_hm, TestData_hm>(hashString_func, equalsString_func, firstLevelCapacity); // or use functions
     testDataHashSet = new HashMapTemplate<TestKey_hm, TestData_hm>(hashString_lambda, equalsString_lambda, firstLevelCapacity);
 
     for(u32 i = 0; i < firstWaveInsertCount; i++) {
