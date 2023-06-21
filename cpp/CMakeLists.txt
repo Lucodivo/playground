@@ -47,6 +47,13 @@ add_executable(
 )
 target_link_libraries(hash_map_template_tests ${LIBS})
 
+add_executable(
+        practice_tests
+        regex_practice.cpp
+)
+target_link_libraries(practice_tests ${LIBS})
+
+
 include(GoogleTest)
 gtest_discover_tests(
         playground_tests
@@ -55,4 +62,5 @@ gtest_discover_tests(
         hash_map_void_tests
         hash_set_void_tests
         hash_map_template_tests
+        practice_tests
 )

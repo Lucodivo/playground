@@ -1,4 +1,9 @@
-
+# Jetbrains IDEs
 .idea/
 
+# cmake
 cmake-build-debug/
+
+# Cargo
+debug/
+target/
