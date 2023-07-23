@@ -102,3 +102,42 @@ fn multiple_references() {
     **w += 1; // '**' -> Dereference mutable reference, dereference Box<u64>
     println!("w: {}", w);
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn equality_derefs_ref() {
+        let a = 0;
+        let b = 0;
+        assert_eq!(&a, &b);
+        assert_eq!(&&a, &&b);
+        assert_eq!(&&&a, &&&b);
+        assert_eq!(&&&&a, &&&&b);
+    }
+
+    #[test]
+    fn equality_for_refs() {
+        let a = 0u64;
+        let b = 0u64;
+        let a_ref = &a;
+        let b_ref = &b;
+
+        // all of these dereference
+        assert_eq!(&a, &b);
+        assert_eq!(a_ref, b_ref);
+        assert_eq!(a_ref, &a);
+        assert_eq!(a_ref, &b);
+        assert_eq!(b_ref, &a);
+        assert_eq!(b_ref, &b);
+
+        assert_ne!(a_ref as *const u64, &b);
+        assert_ne!(a_ref as *const u64, &b as *const u64);
+        assert_ne!(b_ref as *const u64, &a);
+        assert_ne!(b_ref as *const u64, &a as *const u64);
+        
+        assert_eq!(a_ref as *const u64, &a);
+        assert_eq!(a_ref as *const u64, &a as *const u64);
+        assert_eq!(b_ref as *const u64, &b);
+        assert_eq!(b_ref as *const u64, &b as *const u64);
+    }
+}
