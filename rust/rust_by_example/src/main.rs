@@ -130,14 +130,43 @@ mod tests {
         assert_eq!(b_ref, &a);
         assert_eq!(b_ref, &b);
 
+        // comparing references as pointers
         assert_ne!(a_ref as *const u64, &b);
         assert_ne!(a_ref as *const u64, &b as *const u64);
         assert_ne!(b_ref as *const u64, &a);
         assert_ne!(b_ref as *const u64, &a as *const u64);
-        
         assert_eq!(a_ref as *const u64, &a);
         assert_eq!(a_ref as *const u64, &a as *const u64);
         assert_eq!(b_ref as *const u64, &b);
         assert_eq!(b_ref as *const u64, &b as *const u64);
+    }
+
+    #[test]
+    fn lazy_counter() {
+
+        fn COUNTER() -> u64 {
+            static mut COUNTER: u64 = 0;
+            unsafe {
+                COUNTER += 1;
+                COUNTER
+            }
+        }
+
+        use once_cell::sync::Lazy;
+
+        static LAZY_ONE: Lazy<u64> = Lazy::new(|| { COUNTER() });
+        static LAZY_TWO: Lazy<u64> = Lazy::new(|| { COUNTER() });
+        static LAZY_THREE: Lazy<u64> = Lazy::new(|| { COUNTER() });
+        static LAZY_FOUR: Lazy<u64> = Lazy::new(|| { COUNTER() });
+
+        assert_eq!(*LAZY_ONE, 1); // initialized here
+        assert_eq!(*LAZY_THREE, 2); // initialized here
+        assert_eq!(*LAZY_FOUR, 3); // initialized here
+        assert_eq!(*LAZY_TWO, 4); // initialized here
+
+        assert_eq!(*LAZY_ONE, 1);
+        assert_eq!(*LAZY_TWO, 4);
+        assert_eq!(*LAZY_THREE, 2);
+        assert_eq!(*LAZY_FOUR, 3);
     }
 }
