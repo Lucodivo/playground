@@ -1,5 +1,48 @@
 fn main() {
-    mutability_and_copy();
+    conditional_compilation();
+}
+
+
+#[allow(dead_code)]
+fn conditional_compilation() {
+    // All the following features must be specified in Cargo.toml
+    // To be compiled by...
+
+    // cargo build --features "mode_1"
+    #[cfg(feature = "mode_1")]
+    fn conditional_function() {
+        println!("1");
+    }
+
+    // cargo build --features "mode_2"
+    #[cfg(feature = "mode_2")]
+    fn conditional_function() {
+        println!("2");
+    }
+
+    #[cfg(not(any(feature = "mode_1", feature = "mode_2")))]
+    fn conditional_function() {
+        println!("other");
+    }
+
+    conditional_function();
+
+    #[cfg(feature = "mode_1")]
+    let feature_name = "mode_1";
+
+    #[cfg(feature = "mode_2")]
+    let feature_name = "mode_2";
+
+    #[cfg(feature = "other")]
+    let feature_name = "other";
+    
+    #[cfg(any(feature = "mode_1", feature = "mode_2", feature = "other"))]
+    println!("feature_name: {}", feature_name);
+    
+    #[cfg(feature = "default")]
+    println!("Default runs no matter the build but \"default\" must be a specified feature in Cargo.toml");
+    #[cfg(not(feature = "default"))]
+    println!("This never gets printed as far as I can tell.");
 }
 
 #[allow(dead_code)]

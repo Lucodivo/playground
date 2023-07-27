@@ -7,3 +7,9 @@ edition = "2021"
 
 [dependencies]
 once_cell = "1.18.0"
+
+[features]
+default = []
+mode_1 = []
+mode_2 = []
+other = []
